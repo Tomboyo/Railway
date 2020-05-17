@@ -1,0 +1,70 @@
+= Withp: With, but Pipelined
+
+Withp, to rhyme with lisp, is a library to smoothly integrate error-returning
+functions into pipelines.
+
+This fills a similar role to the `with` expression:
+
+[source, elixir]
+----
+with {:ok, v1} <- f1(),
+     {:ok, v2} <- f2(v1)
+do
+  # happy-path
+else
+  # pattern-match on errors
+end
+----
+
+However, `with` expressions have no way to to handle error cases differently
+when the same error _value_, such as `:error`, is produced by two or more
+different _functions_, such as `f1` and `f2` above. The `with ... else`
+expression cannot determine through pattern-matching alone which `:error` is
+which even though the difference matters.
+
+There is also little way to indicate that a function should _always_ match its
+pattern in a `with` expression (and therefore that if it does not, the program
+has a bug).
+
+Withp attempts to provide an alternative mechanism to `with` through the
+`Withp.Try` module.
+
+== Withp.Try
+
+The Try is a monadic type which represents the state of a computation that may
+or may not encounter an error (specifically when any function in the pipeline
+returns an `{:error, _}` tuple or an `:error` atom.)
+
+Suppose we have a pipeline `:some_input |> foo |> bar |> baz` and we want to
+return "it worked!" if all goes well. Both `bar` and `baz` can return `:error`,
+and we want to return either "bar broke!" or "baz broke!" depending on which
+fails. A Try pipeline to achieve this could look like:
+
+[source, elixir]
+----
+ok(:some_input)                     <1>
+    |> map_ok!(&foo/1)              <2>
+    |> map_ok(:missing_bar, &bar/1) <3>
+    |> map_ok(:missing_baz, &baz/1)
+    |> reduce(                      <4>
+      fn result -> "it worked!" end,
+      fn error ->
+        case error do
+          e = {:missing_bar, _input, _output} -> "bar broke!"
+          e = {:missing_baz, _input, _output} -> "baz broke!"
+        end
+      end)
+----
+<1> `ok` creates an `ok` Try wrapping an arbitrary value.
+<2> `map_ok!/1` indicates that `foo/1` should never return an error. It will
+     _raise_ an error if this assumption is ever violated.
+<3> `map_ok/2` transforms the contents of a Try. The first error encountered
+     by a pipeline, if any, causes any remaining functions like `map_ok/2` and
+     `flat_map/2` to be ignored: The pipeline "coalesces" into an error state.
+     Errors are tagged with values like `:missing_bar` to contextualize their
+     source for later handling.
+<4> `reduce/2` evaluates a Try pipeline to an arbitrary value. In this case,
+    if all went well, the Try evaluates to "it worked!". Otherwise, the
+    tagged errors are matched and resolve to one of "bar broke!" or "baz broke!".
+    In addition to a tag, each error tuple contains the parameter passed to the
+    failed function as well as that function's output.
