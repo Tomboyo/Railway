@@ -3,57 +3,57 @@ defmodule WithpTest do
   doctest Withp.Try
   import Withp.Try
 
-  describe "map_ok!/2" do
+  describe "map!/2" do
     test "raises ArgumentError when the first parameter is not a Try" do
       assert_raise ArgumentError, fn ->
-        map_ok!(:not_a_try, fn _ -> nil end)
+        map!(:not_a_try, fn _ -> nil end)
       end
     end
 
     test "raises ArgumentError when the ok_function evaluates to :error" do
       assert_raise ArgumentError, fn ->
-        ok(:in) |> map_ok!(fn :in -> :error end)
+        ok(:in) |> map!(fn :in -> :error end)
       end
     end
 
     test "raises ArgumentError when the ok_function evaluates to {:error, _}" do
       assert_raise ArgumentError, fn ->
-        ok(:in) |> map_ok!(fn :in -> {:error, nil} end)
+        ok(:in) |> map!(fn :in -> {:error, nil} end)
       end
     end
 
     test "transforms the value of an ok" do
-      assert ok(:out) == map_ok!(ok(:in), fn :in -> :out end)
+      assert ok(:out) == map!(ok(:in), fn :in -> :out end)
     end
 
     test "returns any given error" do
-      assert error() == map_ok!(error(), fn _ -> :out end)
+      assert error() == map!(error(), fn _ -> :out end)
     end
   end
 
-  describe "map_ok/3" do
+  describe "map/3" do
     test "raises ArgumentError when the first parameter is not a Try" do
       assert_raise ArgumentError, fn ->
-        map_ok(:not_a_try, :tag, fn _ -> nil end)
+        map(:not_a_try, :tag, fn _ -> nil end)
       end
     end
 
     test "returns any given error" do
-      assert error() == map_ok(error(), :tag, fn _ -> nil end)
+      assert error() == map(error(), :tag, fn _ -> nil end)
     end
 
     test "transforms the value of an ok" do
-      assert ok(:out) == map_ok(ok(:in), :tag, fn :in -> :out end)
+      assert ok(:out) == map(ok(:in), :tag, fn :in -> :out end)
     end
 
     test "transforms an ok into an error with no payload" do
       assert error(:tag, :in, nil) ==
-               map_ok(ok(:in), :tag, fn :in -> :error end)
+               map(ok(:in), :tag, fn :in -> :error end)
     end
 
     test "transforms an ok into an error with a payload" do
       assert error(:tag, :in, :payload) ==
-               map_ok(ok(:in), :tag, fn :in -> {:error, :payload} end)
+               map(ok(:in), :tag, fn :in -> {:error, :payload} end)
     end
   end
 

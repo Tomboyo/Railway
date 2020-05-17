@@ -34,9 +34,9 @@ defmodule Withp.Try do
 
   ```
       ok(:some_input)         # create an "ok" Try from an arbitrary term
-        |> map_ok!(&f1/1)     # f1 should not fail, so we'll use map_ok!/1
-        |> map_ok(:f2, &f2/1) # f2 might fail; tag the error with :f2
-        |> map_ok(:f3, &f3/1) # f3 might fail; tag the error with :f3
+        |> map!(&f1/1)     # f1 should not fail, so we'll use map!/1
+        |> map(:f2, &f2/1) # f2 might fail; tag the error with :f2
+        |> map(:f3, &f3/1) # f3 might fail; tag the error with :f3
         |> reduce(            # convert the Try to an aribtrary term
           fn result -> "it worked!" end,
           fn error -> case error
@@ -70,11 +70,11 @@ defmodule Withp.Try do
   As with map/3, if the given Try is an `error`, ok_function is ignored and
   the `error` Try is returned.
   """
-  def map_ok!(t, ok_function)
+  def map!(t, ok_function)
 
-  def map_ok!(e = {:error, _}, _ok_function), do: e
+  def map!(e = {:error, _}, _ok_function), do: e
 
-  def map_ok!({:ok, value}, ok_function) do
+  def map!({:ok, value}, ok_function) do
     case ok_function.(value) do
       e = {:error, _} -> bad_ok_function(value, e)
       :error -> bad_ok_function(value, :error)
@@ -82,7 +82,7 @@ defmodule Withp.Try do
     end
   end
 
-  def map_ok!(not_a_try, _ok_function) do
+  def map!(not_a_try, _ok_function) do
     bad_try(not_a_try)
   end
 
@@ -107,11 +107,11 @@ defmodule Withp.Try do
   The `ok_function` may return any arbitrary value, though both `:error` and
   `{:error, _}` are special cases as previously described.
   """
-  def map_ok(t, tag, ok_function)
+  def map(t, tag, ok_function)
 
-  def map_ok(e = {:error, _}, _tag, _ok_function), do: e
+  def map(e = {:error, _}, _tag, _ok_function), do: e
 
-  def map_ok({:ok, value}, tag, ok_function) do
+  def map({:ok, value}, tag, ok_function) do
     case ok_function.(value) do
       :error -> error(tag, value, nil)
       {:error, payload} -> error(tag, value, payload)
@@ -119,7 +119,7 @@ defmodule Withp.Try do
     end
   end
 
-  def map_ok(not_a_try, _tag, _ok_function) do
+  def map(not_a_try, _tag, _ok_function) do
     bad_try(not_a_try)
   end
 
