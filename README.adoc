@@ -60,7 +60,7 @@ ok(:some_input)                     <1>
      _raise_ an error if this assumption is ever violated.
 <3> `map_ok/2` transforms the contents of a Try. The first error encountered
      by a pipeline, if any, causes any remaining functions like `map_ok/2` and
-     `flat_map/2` to be ignored: The pipeline "coalesces" into an error state.
+     `flat_map/3` to be ignored: The pipeline "coalesces" into an error state.
      Errors are tagged with values like `:missing_bar` to contextualize their
      source for later handling.
 <4> `reduce/2` evaluates a Try pipeline to an arbitrary value. In this case,
