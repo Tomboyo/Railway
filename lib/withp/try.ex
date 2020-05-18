@@ -100,7 +100,7 @@ defmodule Withp.Try do
   """
   def map!(t, ok_function)
 
-  def map!(e = {:error, _}, _ok_function), do: e
+  def map!(e = {:error, {_, _, _}}, _ok_function), do: e
 
   def map!({:ok, value}, ok_function) do
     case ok_function.(value) do
@@ -161,7 +161,7 @@ defmodule Withp.Try do
   """
   def map(t, tag, ok_function)
 
-  def map(e = {:error, _}, _tag, _ok_function), do: e
+  def map(e = {:error, {_, _, _}}, _tag, _ok_function), do: e
 
   def map({:ok, value}, tag, ok_function) do
     case ok_function.(value) do
@@ -176,31 +176,59 @@ defmodule Withp.Try do
   end
 
   @doc """
-  Transform an `ok` Try to another Try, or return an `error` if given an `error`
-  Try.
+  Apply a function which returns a Try to the content of an Ok. If the result is
+  an Error, a new Error with the given tag and the Error's input and output is
+  returned instead.
+  
+  This allows the author to define Try-returning functions and use them
+  directly.
 
-  The `ok_function` must return a Try.
+  Like many Try functions, `flat_map/3` returns `t` if `t` is an Error. Only if
+  `t` is Ok does `flat_map/3` apply the given function.
+
+  If the function returns a value which is not a Try, `flat_map/3` raises an
+  ArgumentError.
+
+  ## Examples
+
+      iex> Withp.Try.ok(:content)
+      iex> |> Withp.Try.flat_map(:tag, fn :content ->
+      iex>     Withp.Try.ok(:new_content) end)
+      iex> |> Withp.Try.reduce(
+      iex>     fn okay -> okay end,
+      iex>     fn error -> error end
+      iex> )
+      :new_content
+
+      iex> Withp.Try.ok(:content)
+      iex> |> Withp.Try.flat_map(:tag, fn :content ->
+      iex>     Withp.Try.error(:old_tag, :input, :output) end)
+      iex> |> Withp.Try.reduce(
+      iex>     fn okay -> okay end,
+      iex>     fn error -> error end
+      iex> )
+      {:tag, :input, :output}
   """
-  def flat_map(t, ok_function)
+  def flat_map(t, tag, ok_function)
 
-  def flat_map(e = {:error, _}, _ok_function), do: e
+  def flat_map(e = {:error, {_, _, _}}, _tag, _ok_function), do: e
 
-  def flat_map({:ok, value}, ok_function) do
+  def flat_map({:ok, value}, tag, ok_function) do
     case ok_function.(value) do
       ok = {:ok, _} -> ok
-      err = {:error, _} -> err
+      err = {:error, {_, input, output}} -> error(tag, input, output)
       invalid -> bad_ok_function(value, invalid)
     end
   end
 
-  def flat_map(not_a_try, _ok_function) do
+  def flat_map(not_a_try, _tag, _ok_function) do
     bad_try(not_a_try)
   end
 
   @doc """
   Evaluate a Try into any arbitrary term.
   
-  If `t` is an Ok, then `ok_function` is applies to the content of the Ok. If
+  If `t` is an Ok, then `ok_function` is applied to the content of the Ok. If
   instead `t` is an Error, then `error_function` is applied to the error triple.
   `reduce/3` returns the result direclty.
 
@@ -223,7 +251,7 @@ defmodule Withp.Try do
   def reduce(t, ok_function, error_function) do
     case t do
       {:ok, value} -> ok_function.(value)
-      {:error, error} -> error_function.(error)
+      {:error, error = {_, _, _}} -> error_function.(error)
       not_a_try -> bad_try(not_a_try)
     end
   end

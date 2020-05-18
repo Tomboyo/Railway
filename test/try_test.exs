@@ -57,28 +57,28 @@ defmodule WithpTest do
     end
   end
 
-  describe "flat_map/2" do
+  describe "flat_map/3" do
     test "raises ArgumentError when the first parameter is not a Try" do
       assert_raise ArgumentError, fn ->
-        flat_map(:not_a_try, fn _ -> ok(nil) end)
+        flat_map(:not_a_try, :tag, fn _ -> ok(nil) end)
       end
     end
 
-    test "returns any given error" do
-      assert error() == flat_map(error(), fn _ -> ok(nil) end)
+    test "returns any given error " do
+      assert error() == flat_map(error(), :tag, fn _ -> ok(nil) end)
     end
 
     test "transforms an ok to an ok" do
-      assert ok(:out) == flat_map(ok(:in), fn :in -> ok(:out) end)
+      assert ok(:out) == flat_map(ok(:in), :tag, fn :in -> ok(:out) end)
     end
 
-    test "transforms an ok to an error" do
-      assert error() == flat_map(ok(:in), fn :in -> error() end)
+    test "transforms an ok to an error with an updated tag" do
+      assert error(:tag, nil, nil) == flat_map(ok(:in), :tag, fn :in -> error(:old_tag, nil, nil) end)
     end
 
     test "raises ArgumentError if ok_function does not evaluate to a Try" do
       assert_raise ArgumentError, fn ->
-        flat_map(ok(:in), fn :in -> :not_a_try end)
+        flat_map(ok(:in), :tag, fn :in -> :not_a_try end)
       end
     end
   end
