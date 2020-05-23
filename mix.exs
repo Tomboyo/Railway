@@ -21,10 +21,11 @@ defmodule Withp.MixProject do
     """
   end
 
+  # NOTE: not yet published.
   def package do
     [
       files: ["lib", "mix.exs", "README.md"],
-      maintainers: ["Yos Riady"],
+      maintainers: ["Tom Simmons"],
       licenses: ["Apache 2.0"],
       links: %{"GitHub" => "https://github.com/tomboyo/withp",
                "Docs"   => "http://hexdocs.pm/withp"}
