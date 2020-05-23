@@ -31,9 +31,9 @@ Withp attempts to provide an alternative mechanism to `with` through the
 
 == Withp.Try
 
-The Try is a monadic type which represents the state of a computation that may
-or may not encounter an error (specifically when any function in the pipeline
-returns an `{:error, _}` tuple or an `:error` atom.)
+Try is a functor used to compose many functions together, any of which may
+evaluate to an error (like `{:error, _}` or `:error`), and to compute a result
+whether that happens or not.
 
 Suppose we have a pipeline `:some_input |> foo |> bar |> baz` and we want to
 return "it worked!" if all goes well. Both `bar` and `baz` can return `:error`,
@@ -42,29 +42,30 @@ fails. A Try pipeline to achieve this could look like:
 
 [source, elixir]
 ----
-ok(:some_input)                     <1>
-    |> map_ok!(&foo/1)              <2>
-    |> map_ok(:missing_bar, &bar/1) <3>
+of!(fn -> foo(:some_input) end)     <1>
+    |> map_ok(:missing_bar, &bar/1) <2>
     |> map_ok(:missing_baz, &baz/1)
-    |> reduce(                      <4>
-      fn result -> "it worked!" end,
+    |> reduce(                      <3>
+      fn value -> "it worked!" end,
       fn error ->
         case error do
-          e = {:missing_bar, _input, _output} -> "bar broke!"
-          e = {:missing_baz, _input, _output} -> "baz broke!"
+          e = {:missing_bar, _value, _context} -> "bar broke!"
+          e = {:missing_baz, _value, _context} -> "baz broke!"
         end
       end)
 ----
-<1> `ok` creates an `ok` Try wrapping an arbitrary value.
-<2> `map_ok!/1` indicates that `foo/1` should never return an error. It will
-     _raise_ an error if this assumption is ever violated.
-<3> `map_ok/2` transforms the contents of a Try. The first error encountered
-     by a pipeline, if any, causes any remaining functions like `map_ok/2` and
-     `flat_map/3` to be ignored: The pipeline "coalesces" into an error state.
-     Errors are tagged with values like `:missing_bar` to contextualize their
-     source for later handling.
-<4> `reduce/2` evaluates a Try pipeline to an arbitrary value. In this case,
+<1> `of!/1` starts a Try pipeline. The "bang" notation indicates that `foo/1`
+     should never return an error. `of!/1` will _raise_ an error if this
+     assumption is ever violated.
+<3> `map_ok/3` transforms the value of a Try. The first error encountered
+     by a pipeline, if any, causes any remaining map operations to be ignored:
+     The pipeline "short-circuits". Errors are tagged with values like
+     `:missing_bar` to contextualize their source for later handling.
+<4> `reduce/3` evaluates a Try pipeline to an arbitrary value. In this case,
     if all went well, the Try evaluates to "it worked!". Otherwise, the
-    tagged errors are matched and resolve to one of "bar broke!" or "baz broke!".
-    In addition to a tag, each error tuple contains the parameter passed to the
-    failed function as well as that function's output.
+    tagged errors are matched and resolve to one of "bar broke!" or
+    "baz broke!". In addition to a tag, each error tuple contains the value of
+    the Try at point of failure as well as the context of the error (e.g,
+    `{:error, context}`) if present.
+
+See the `Withp.Try` module documentation for more information.
