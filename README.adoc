@@ -42,17 +42,17 @@ fails. A Try pipeline to achieve this could look like:
 
 [source, elixir]
 ----
-of!(fn -> foo(:some_input) end)     <1>
-    |> map_ok(:missing_bar, &bar/1) <2>
-    |> map_ok(:missing_baz, &baz/1)
-    |> reduce(                      <3>
-      fn value -> "it worked!" end,
-      fn error ->
-        case error do
-          e = {:missing_bar, _value, _context} -> "bar broke!"
-          e = {:missing_baz, _value, _context} -> "baz broke!"
-        end
-      end)
+of!(fn -> foo(:some_input) end) <1>
+  |> map(:missing_bar, &bar/1)  <2>
+  |> map(:missing_baz, &baz/1)
+  |> reduce(                    <3>
+    fn value -> "it worked!" end,
+    fn error ->
+      case error do
+        e = {:missing_bar, _value, _context} -> "bar broke!"
+        e = {:missing_baz, _value, _context} -> "baz broke!"
+      end
+    end)
 ----
 <1> `of!/1` starts a Try pipeline. The "bang" notation indicates that `foo/1`
      should never return an error. `of!/1` will _raise_ an error if this
