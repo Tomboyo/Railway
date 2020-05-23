@@ -88,13 +88,10 @@ defmodule Withp.Try do
   interleaving.
   """
 
-  @no_value :no_value
-  @no_context :no_context
-
   def of(tag, function) do
     case function.() do
-      :error -> error(tag, @no_value, :no_context)
-      {:error, context} -> error(tag, @no_value, context)
+      :error -> error(tag, :no_value, :no_context)
+      {:error, context} -> error(tag, :no_value, context)
       {:ok, value} -> ok(value)
       value -> ok(value)
     end
@@ -178,7 +175,7 @@ defmodule Withp.Try do
 
   def map({:ok, value}, tag, ok_function) do
     case ok_function.(value) do
-      :error -> error(tag, value, @no_context)
+      :error -> error(tag, value, :no_context)
       {:error, context} -> error(tag, value, context)
       {:ok, value} -> ok(value)
       result -> ok(result)
