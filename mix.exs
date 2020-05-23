@@ -7,19 +7,35 @@ defmodule Withp.MixProject do
       version: "0.1.0",
       elixir: "~> 1.9",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      description: description(),
+      package: package(),
     ]
   end
 
-  # Run "mix help compile.app" to learn about applications.
-  def application do
+  def description do
+    """
+    Withp, to rhyme with lisp, is a library to smoothly integrate error-
+    returning functions into pipelines via monadic types. It enables authors to
+    clarify assumptions and handle errors in ways `with` cannot.
+    """
+  end
+
+  def package do
     [
-      extra_applications: [:logger]
+      files: ["lib", "mix.exs", "README.md"],
+      maintainers: ["Yos Riady"],
+      licenses: ["Apache 2.0"],
+      links: %{"GitHub" => "https://github.com/tomboyo/withp",
+               "Docs"   => "http://hexdocs.pm/withp"}
     ]
   end
 
-  # Run "mix help deps" to learn about dependencies.
+  def application, do: []
+
   defp deps do
-    []
+    [
+      {:ex_doc, "~> 0.21", only: :dev, runtime: false},
+    ]
   end
 end

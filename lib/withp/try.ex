@@ -1,30 +1,21 @@
 defmodule Withp.Try do
   @moduledoc """
-  The Try monad combines functions which may produce errors of the form `:error`
-  or `{:error, _}` into a pipeline. Computation short-circuits when an error is
-  returned such that functions between the point of failure and the point of
-  error-handling are ignored. This is similar to the `with` construct except
-  that a Try can tell apart otherwise identical `:error` atoms returned by
-  different functions to indicate different errors, and can handle them
+  The Try functor combines functions which may produce errors of the form
+  `:error` or `{:error, _}` into a pipeline. Computation short-circuits when an
+  error is returned such that functions between the point of failure and the
+  point of error-handling are ignored. This is similar to the `with` construct
+  except that a Try can tell apart otherwise identical `:error` atoms returned
+  by different functions to indicate different errors, and can handle them
   contextually.
-
-  Try is the sum of two states, Ok and Error. An Ok contains a value which
-  can be "mutated" by the `map` and `flat_map` functions. An Error contains an
-  "immutable" triple `{tag, input, output}` of a _tag_ that uniquely identifies
-  the error within the context of a Try pipeline, the _input_ parameters to the
-  function that evaluated to an Error, and the _output_ from that function.
-  The `output` may be `nil` in the case of a function that simply returns
-  `:error`, or it may contain the contents of an `{:error, _}` tuple.
 
   ## Example use case
 
   Consider the following workflow using `with`:
 
   ```
-      input = :some_term
-      with {:ok, v1} <- f1(input), # should not fail
-           {:ok, v2} <- f2(v1),    # might fail with {:error, :enoent}
-           {:ok, v3} <- f3(v2)     # might fail with {:error, :enoent}
+      with {:ok, v1} <- f1(),   # should not fail
+           {:ok, v2} <- f2(v1), # might fail with {:error, :enoent}
+           {:ok, v3} <- f3(v2)  # might fail with {:error, :enoent}
       do
         # do something with v3
       else
@@ -41,62 +32,92 @@ defmodule Withp.Try do
      cannot determine the source of any `{:error, :enoent}` value and therefore
      cannot handle an error from `f2` _differently_ than an error from `f3`.
 
-  A Try workflow handles this more gracefully. We use `map!/2` to indicate that
-  a given function should never fail, and `map/3` to "lift" error-returning
-  functions into the Try workflow, tagging their errors with locally unique
-  atoms that we can pattern-match later on:
+  A Try workflow handles this more gracefully. We use `of/2` and `of!/1` to
+  begin a workflow, `map/3` and `map!/2` to operate on data, and `reduce/3` to
+  evaluate the workflow to any term. The "bang" variant functions `of!/1` and
+  `map!/2` indicate that functions we give them can never return an error. The
+  normal variants "contextualize" function errors by tagging them with locally-
+  unique atoms that we can pattern-match later on in `reduce/3`:
   
   ```
-      ok(:some_input)
-        |> map!(&f1/1)
+      of!(&f1/0)
         |> map(:f2_error, &f2/1)
         |> map(:f3_error, &f3/1)
         |> reduce(
           fn result -> "it worked!" end,
           fn error ->
             case error do
-              {:f2_error, _input_to_f2, _output_of_f2} -> "f2 broke!"
-              {:f3_error, _input_to_f3, _output_of_f3} -> "f3 broke!"
+              {:f2_error, _value_of_try, _error_context} -> "f2 broke!"
+              {:f3_error, _value_of_try, _error_context} -> "f3 broke!"
             end
           end
         )
   ```
 
-  In the example above we start our pipeline with `ok/1`, which creates an Ok
-  from any term, and we end our pipline with `reduce/3`, which digests the Try
-  into a String. `reduce/3` lets us pattern-match the distinct tags we
-  introduced ad-hoc with `map/3`.
+  Try treats both structured errors of the form `{:error, _context}` and
+  unstructured errors `:error` as errors. All other values are considered
+  normal. The first error causes a Try workflow to short-circuit, skipping all
+  remaining `map` operations and evaluating the `reduce/3` step immediately.
+  When an error value is encountered, the value of the try and the context part
+  of the error (if any) is recorded and passed to the error callback of
+  `reduce/3`.
+
+  ## Considerations
+
+  Refrain from using Try as a return type in any function. Error tags are very
+  context-sensitive; they are easiest to pattern-match in the `reduce` step when
+  they are on-screen, within the same function. Moreover, any attempt to re-use
+  tags in shared functions is likely to encounter problems with tag overloading,
+  which is essentially the problem with `with` that Try tries to address. Thus,
+  treat a Try as a means of composition and evaluation, not as a value in and of
+  itself.
+
+  The reader may be perplexed to learn that there is no `flat_map` function, and
+  yet `map` actually destructures `{:ok, value} | {:error, context}` types.
+  Usually destructuring is the domain of `flat_map` functions. There are two
+  reasons this is not so for Try:
+  
+  The first is that `flat_map` also tends to destructure self-similar values,
+  and in the case of `{:ok, value} | {:error, context}` we are not dealing with
+  another member of the Try type.
+
+  The second is because some standard library functions like `Keyword.fetch/2`
+  return values like `{:ok, value} | :error`, compositions of both structured
+  and unstructured values. We may have used `flat_map` for specifically those
+  functions which returned a structured result type if there was no such
+  interleaving.
   """
 
-  @doc """
-  Create an Ok of the given value.
-  """
-  def ok(value), do: {:ok, value}
+  @no_value :no_value
+  @no_context :no_context
+
+  def of(tag, function) do
+    case function.() do
+      :error -> error(tag, @no_value, :no_context)
+      {:error, context} -> error(tag, @no_value, context)
+      {:ok, value} -> ok(value)
+      value -> ok(value)
+    end
+  end
+
+  def of!(function) do
+    case function.() do
+      :error ->
+        raise ArgumentError, "of!/1 callback evaluated to :error"
+      e = {:error, _context} ->
+        raise ArgumentError, "of!/1 callback evaluated to #{inspect(e)}"
+      {:ok, value} -> ok(value)
+      value -> ok(value)
+    end
+  end
+
+  defp ok(value), do: {:ok, value}
+  defp error(tag, input, output), do: {:error, {tag, input, output}}
 
   @doc """
-  Create an Error of the given tag, input, and output.
-
-  * `tag` is simply a term to pattern-match with. It should be unique within the
-    context of a single Try pipeline. Typically this is an atom.
-  * `input` is the input parameters to the function which produced the Error.
-  * `output` is the `reason` component of an `{:error, reason}` tuple returned
-    by the function which produced the Error. If the function returned an
-    unstructured error like `:error`, this is conventially left `nil`.
-  """
-  def error(tag, input, output), do: {:error, {tag, input, output}}
-
-  @doc """
-  Create a default Error with a `nil` tag, input, and output, equivalent to
-  `error(nil, nil, nil)`. This function is intended for test cases and its use
-  is cautioned against elsewhere. Note that `error/0` is no different than an
-  unadorned `:error`, which defeats its purpose in most contexts.
-  """
-  def error, do: {:error, {nil, nil, nil}}
-
-  @doc """
-  Like `map/3`, apply a function to the contents of an Ok, but with the
-  assumption that the function _should not_ return an error. If the function
-  does so, `map!/2` raises an ArgumentError.
+  Like `map/3`, apply a function to the value of a Try, but with the assumption
+  that the function _should not_ return an error. If the function does so,
+  `map!/2` raises an ArgumentError.
   """
   def map!(t, ok_function)
 
@@ -104,8 +125,11 @@ defmodule Withp.Try do
 
   def map!({:ok, value}, ok_function) do
     case ok_function.(value) do
-      e = {:error, _} -> bad_ok_function(value, e)
-      :error -> bad_ok_function(value, :error)
+      :error -> raise ArgumentError,
+        "map!/2 callback evaluated to :error given #{inspect(value)}"
+      e = {:error, _} -> raise ArgumentError,
+        "map!/2 callback evaluated to #{inspect(e)} given #{inspect(value)}"
+      {:ok, value} -> ok(value)
       result -> ok(result)
     end
   end
@@ -114,48 +138,37 @@ defmodule Withp.Try do
     bad_try(not_a_try)
   end
 
-  defp bad_ok_function(input, output) do
-    input = inspect(input)
-    output = inspect(output)
-
-    raise ArgumentError,
-          "ok_function.(#{input}) evaluated to an illegal value: #{output}"
-  end
-
   defp bad_try(not_a_try) do
-    raise ArgumentError, "#{inspect(not_a_try)} is not a Try type"
+    raise ArgumentError, "not a Try: #{inspect(not_a_try)}"
   end
 
   @doc """
-  Apply a function to the content of an Ok, returning a new Ok with the result
-  or else an Error.
+  Apply a function to the value of a Try, returning a new Try with the result of
+  the function, which may be an error value.
 
-  Like many Try functions, `map/3` returns `t` if `t` is an Error. Only if `t`
-  is Ok does `map/3` apply the given function.
+  `map/3` ignores its arguments if the given try has already encountered an
+  error. The Try "short-circuits" upon the first occurence of any error value.
 
-  The function may return an arbitrary value, which will become the content of
-  the new Ok. However, `:error` and `{:error, reason}` are special cases. When
-  either is returned, `map/3` evaluates to an Error:
-    * If `:error` is returned and the Ok's contents are `content`, then `map/3`
-      evaluates to `error(tag, content, nil)`.
-    * If `{:error, output}` is returned and the Ok's contents are `content`,
-      then `map/3` evaluates to `error(tag, content, output)`.
+  The function may return an arbitrary value, which will become the value of the
+  new Try. However, `:error` and `{:error, reason}` values are special cases.
+  When either is returned, subsequent map operations short-circuit. Errors are
+  recorded within the Try and may be handled within `reduce/3`.
 
   ## Examples
 
-      iex> Withp.Try.ok(:input)
+      iex> Withp.Try.of!(fn -> :input end)
       iex> |> Withp.Try.map(:my_tag, fn :input -> :output end)
       iex> |> Withp.Try.reduce(
       iex>     fn :output -> "Success!" end,
-      iex>     fn e = {:my_tag, _input, _output} -> e end
+      iex>     fn e = {:my_tag, _try_value, _context} -> e end
       iex> )
       "Success!"
 
-      iex> Withp.Try.ok(:input)
+      iex> Withp.Try.of!(fn -> :input end)
       iex> |> Withp.Try.map(:my_tag, fn :input -> {:error, "oops!"} end)
       iex> |> Withp.Try.reduce(
       iex>     fn :output -> "Success!" end,
-      iex>     fn e = {:my_tag, _input, _output} -> e end
+      iex>     fn e = {:my_tag, _try_value, _context} -> e end
       iex> )
       {:my_tag, :input, "oops!"}
   """
@@ -165,8 +178,9 @@ defmodule Withp.Try do
 
   def map({:ok, value}, tag, ok_function) do
     case ok_function.(value) do
-      :error -> error(tag, value, nil)
-      {:error, payload} -> error(tag, value, payload)
+      :error -> error(tag, value, @no_context)
+      {:error, context} -> error(tag, value, context)
+      {:ok, value} -> ok(value)
       result -> ok(result)
     end
   end
@@ -176,81 +190,51 @@ defmodule Withp.Try do
   end
 
   @doc """
-  Apply a function which returns a Try to the content of an Ok. If the result is
-  an Error, a new Error with the given tag and the Error's input and output is
-  returned instead.
-  
-  This allows the author to define Try-returning functions and use them
-  directly.
-
-  Like many Try functions, `flat_map/3` returns `t` if `t` is an Error. Only if
-  `t` is Ok does `flat_map/3` apply the given function.
-
-  If the function returns a value which is not a Try, `flat_map/3` raises an
-  ArgumentError.
-
-  ## Examples
-
-      iex> Withp.Try.ok(:content)
-      iex> |> Withp.Try.flat_map(:tag, fn :content ->
-      iex>     Withp.Try.ok(:new_content) end)
-      iex> |> Withp.Try.reduce(
-      iex>     fn okay -> okay end,
-      iex>     fn error -> error end
-      iex> )
-      :new_content
-
-      iex> Withp.Try.ok(:content)
-      iex> |> Withp.Try.flat_map(:tag, fn :content ->
-      iex>     Withp.Try.error(:old_tag, :input, :output) end)
-      iex> |> Withp.Try.reduce(
-      iex>     fn okay -> okay end,
-      iex>     fn error -> error end
-      iex> )
-      {:tag, :input, :output}
-  """
-  def flat_map(t, tag, ok_function)
-
-  def flat_map(e = {:error, {_, _, _}}, _tag, _ok_function), do: e
-
-  def flat_map({:ok, value}, tag, ok_function) do
-    case ok_function.(value) do
-      ok = {:ok, _} -> ok
-      err = {:error, {_, input, output}} -> error(tag, input, output)
-      invalid -> bad_ok_function(value, invalid)
-    end
-  end
-
-  def flat_map(not_a_try, _tag, _ok_function) do
-    bad_try(not_a_try)
-  end
-
-  @doc """
   Evaluate a Try into any arbitrary term.
   
-  If `t` is an Ok, then `ok_function` is applied to the content of the Ok. If
-  instead `t` is an Error, then `error_function` is applied to the error triple.
-  `reduce/3` returns the result direclty.
+  If the Try completed normally, then `value_function` is applied to the value
+  of the Try. Otherwise, `error` function is applied the the error triple held
+  by the Try.
+
+  The error triple takes the form `{tag, value, context}`. The tag component is
+  whatever tag atom was passed to the `of` or `map` function which encountered
+  the error. The optional value component is takes the value of the Try when the
+  error was encountered, if the Try had a value:
+
+  * If the error was encountered by a `map` callback, it is the parameter passed
+    to that callback.
+  * If the error was encountered by an `of` callback, it defaults to
+    `:no_value`.
+
+  Finally, the optional context component is that of the encountered error, if
+  the error contained a context payload:
+
+  * If the error took the form `{:error, v}`, then context takes the value of
+    `v`.
+  * If the error was just `:error`, then context defaults to `:no_context`.
+
+  The result of the applied function is returned directly.
 
   ## Examples
 
-      iex> Withp.Try.ok(:content)
+      iex> Withp.Try.of!(fn -> :value end)
       iex> |> Withp.Try.reduce(
-      iex>     fn okay  -> okay end,
-      iex>     fn error -> error end
+      iex>     fn _okay  -> :okay end,
+      iex>     fn _error -> :error end
       iex> )
-      :content
+      :okay
 
-      iex> Withp.Try.error(:tag, :input, :output)
+      iex> Withp.Try.of!(fn -> :value end)
+      iex> |> Withp.Try.map(:tag, fn :value -> {:error, "oops!"} end)
       iex> |> Withp.Try.reduce(
-      iex>     fn okay -> okay end,
-      iex>     fn error -> error end
+      iex>     fn _okay -> :okay end,
+      iex>     fn {:tag, value, context} -> {value, context} end
       iex> )
-      {:tag, :input, :output}
+      {:value, "oops!"}
   """
-  def reduce(t, ok_function, error_function) do
+  def reduce(t, value_function, error_function) do
     case t do
-      {:ok, value} -> ok_function.(value)
+      {:ok, value} -> value_function.(value)
       {:error, error = {_, _, _}} -> error_function.(error)
       not_a_try -> bad_try(not_a_try)
     end

@@ -3,6 +3,61 @@ defmodule WithpTest do
   doctest Withp.Try
   import Withp.Try
 
+  defp id(x), do: x
+  defp unused(_), do: assert false, "this function must not be called"
+
+  describe "of/2" do
+    test "creates a Try from a function value" do
+      assert :value ==
+        of(:tag, fn -> :value end)
+        |> reduce(&id/1, &unused/1)
+    end
+
+    test "destructures ok tuples into a new Try" do
+      assert :value ==
+        of(:tag, fn -> {:ok, :value} end)
+        |> reduce(&id/1, &unused/1)
+    end
+
+    test "creates a Try from a function error" do
+      assert {:tag, :no_value, :no_context} ==
+        of(:tag, fn -> :error end)
+        |> reduce(&unused/1, &id/1)
+    end
+
+    test "destructures error context into a new Try" do
+      assert {:tag, :no_value, :context} ==
+        of(:tag, fn -> {:error, :context} end)
+        |> reduce(&unused/1, &id/1)
+    end
+  end
+
+  describe "of!/1" do
+    test "raises ArgumentError when the function evaluates to an error" do
+      assert_raise ArgumentError, fn ->
+        of!(fn -> :error end)
+      end
+    end
+
+    test "raises ArgumentError when the function evaluates to an {:error, _}" do
+      assert_raise ArgumentError, fn ->
+        of!(fn -> {:error, :context} end)
+      end
+    end
+
+    test "creates a Try from a function value" do
+      assert :value ==
+        of!(fn -> :value end)
+        |> reduce(&id/1, &unused/1)
+    end
+
+    test "destructures ok tuples into a new Try" do
+      assert :value ==
+        of!(fn -> {:ok, :value} end)
+        |> reduce(&id/1, &unused/1)
+    end
+  end
+
   describe "map!/2" do
     test "raises ArgumentError when the first parameter is not a Try" do
       assert_raise ArgumentError, fn ->
@@ -10,24 +65,39 @@ defmodule WithpTest do
       end
     end
 
-    test "raises ArgumentError when the ok_function evaluates to :error" do
+    test "raises ArgumentError when the function evaluates to an error" do
       assert_raise ArgumentError, fn ->
-        ok(:in) |> map!(fn :in -> :error end)
+        of!(fn -> :in end)
+        |> map!(fn :in -> :error end)
       end
     end
 
-    test "raises ArgumentError when the ok_function evaluates to {:error, _}" do
+    test "raises ArgumentError when the function evaluates to an {:error, _}" do
       assert_raise ArgumentError, fn ->
-        ok(:in) |> map!(fn :in -> {:error, nil} end)
+        of!(fn -> :in end)
+        |> map!(fn :in -> {:error, nil} end)
       end
-    end
-
-    test "transforms the value of an ok" do
-      assert ok(:out) == map!(ok(:in), fn :in -> :out end)
     end
 
     test "returns any given error" do
-      assert error() == map!(error(), fn _ -> :out end)
+      assert {:tag, :no_value, :no_context} ==
+        of(:tag, fn -> :error end)
+        |> map!(&unused/1)
+        |> reduce(&unused/1, &id/1)
+    end
+
+    test "creates a Try by applying a function to the value of a Try" do
+      assert :out ==
+        of!(fn -> :in end)
+        |> map!(fn :in -> :out end)
+        |> reduce(&id/1, &unused/1)
+    end
+
+    test "destructures ok tuples into a new Try" do
+      assert :out ==
+        of!(fn -> :in end)
+        |> map!(fn :in -> {:ok, :out} end)
+        |> reduce(&id/1, &unused/1)
     end
   end
 
@@ -39,73 +109,65 @@ defmodule WithpTest do
     end
 
     test "returns any given error" do
-      assert error() == map(error(), :tag, fn _ -> nil end)
+      assert {:tag, :no_value, :no_context} ==
+        of(:tag, fn -> :error end)
+        |> map(:ignored, fn _ -> nil end)
+        |> reduce(&unused/1, &id/1)
     end
 
-    test "transforms the value of an ok" do
-      assert ok(:out) == map(ok(:in), :tag, fn :in -> :out end)
+    test "creates a new Try by applying a function to the value of a Try" do
+      assert :out ==
+        of!(fn -> :in end)
+        |> map(:tag, fn :in -> :out end)
+        |> reduce(&id/1, &unused/1)
     end
 
-    test "transforms an ok into an error with no payload" do
-      assert error(:tag, :in, nil) ==
-               map(ok(:in), :tag, fn :in -> :error end)
+    test "destructures ok tuples into a new Try" do
+      assert :out ==
+        of!(fn -> :in end)
+        |> map(:tag, fn :in -> {:ok, :out} end)
+        |> reduce(&id/1, &unused/1)
     end
 
-    test "transforms an ok into an error with a payload" do
-      assert error(:tag, :in, :payload) ==
-               map(ok(:in), :tag, fn :in -> {:error, :payload} end)
-    end
-  end
-
-  describe "flat_map/3" do
-    test "raises ArgumentError when the first parameter is not a Try" do
-      assert_raise ArgumentError, fn ->
-        flat_map(:not_a_try, :tag, fn _ -> ok(nil) end)
-      end
+    test "creates a Try from a function error" do
+      assert {:tag, :in, :no_context} ==
+        of!(fn -> :in end)
+        |> map(:tag, fn :in -> :error end)
+        |> reduce(&unused/1, &id/1)
     end
 
-    test "returns any given error " do
-      assert error() == flat_map(error(), :tag, fn _ -> ok(nil) end)
-    end
-
-    test "transforms an ok to an ok" do
-      assert ok(:out) == flat_map(ok(:in), :tag, fn :in -> ok(:out) end)
-    end
-
-    test "transforms an ok to an error with an updated tag" do
-      assert error(:tag, nil, nil) == flat_map(ok(:in), :tag, fn :in -> error(:old_tag, nil, nil) end)
-    end
-
-    test "raises ArgumentError if ok_function does not evaluate to a Try" do
-      assert_raise ArgumentError, fn ->
-        flat_map(ok(:in), :tag, fn :in -> :not_a_try end)
-      end
+    test "desctructures error context into a new Try" do
+      assert {:tag, :in, :context} ==
+        of!(fn -> :in end)
+        |> map(:tag, fn :in -> {:error, :context} end)
+        |> reduce(&unused/1, &id/1)
     end
   end
 
   describe "reduce/3" do
     test "raises ArgumentError when the first parameter is not a Try" do
       assert_raise ArgumentError, fn ->
-        reduce(:not_a_try, fn _ -> nil end, fn _ -> nil end)
+        reduce(:not_a_try, &unused/1, &unused/1)
       end
     end
 
-    test "transforms an ok into any term" do
-      assert :out =
-               ok(:in)
-               |> reduce(
-                 fn :in -> :out end,
-                 fn _ -> nil end
-               )
+    test "evaluates the Try's value to any term" do
+      assert :out ==
+        of!(fn -> :in end)
+        |> reduce(
+          fn :in -> :out end,
+          &unused/1
+        )
     end
 
-    test "transforms an error into any term" do
-      assert :out =
-               error(:tag, :in, :payload)
-               |> reduce(
-                 fn _ -> nil end,
-                 fn {:tag, :in, :payload} -> :out end
-               )
+    test "evaluates the Try's error to any term" do
+      assert :out ==
+        of!(fn -> :in end)
+        |> map(:tag, fn :in -> {:error, :context} end)
+        |> reduce(
+          &unused/1,
+          fn {:tag, :in, :context} -> :out end
+        )
     end
   end
 end
