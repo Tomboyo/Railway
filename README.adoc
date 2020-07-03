@@ -1,9 +1,12 @@
-= Withp: With, but Pipelined
+= Withp
 
-Withp, to rhyme with lisp, is a library to smoothly integrate error-returning
-functions into pipelines.
+A hobby-project to frame logic patterns.
 
-This fills a similar role to the `with` expression:
+== Sink
+
+Sink fills a similar role to the `with` expression, but better accomodates data collisions. Its goal is to let an author compose a function pipeline out of (a) guard clauses that can short-circuit the pipeline and (b) regular functions that advance an intermediate state. By emphasizing function composition, the result resembles a table of contents. The maintainer can see at a glance the branching points in the algorithm, directing them towards helper functions they need to read, and away from those they don't.
+
+Consider the following:
 
 [source, elixir]
 ----
@@ -16,56 +19,22 @@ else
 end
 ----
 
-However, `with` expressions have no way to to handle error cases differently
-when the same error _value_, such as `:error`, is produced by two or more
-different _functions_, such as `f1` and `f2` above. The `with ... else`
-expression cannot determine through pattern-matching alone which `:error` is
-which even though the difference matters.
+Suppose both `f1` and `f2` can return `:error`, but that if `f1` fails, we need to return a different value than if `f2` fails. We can achieve this by wrapping either of `f1` or `f2` in a local helper function to replace `:error` with a unique value. This is tedious, however, because many functions collide in this way. We would need to write helper functions pretty frequently.
 
-There is also little way to indicate that a function should _always_ match its
-pattern in a `with` expression (and therefore that if it does not, the program
-has a bug).
-
-Withp attempts to provide an alternative mechanism to `with` through the
-`Withp.Try` module.
-
-== Withp.Try
-
-Try is a functor used to compose many functions together, any of which may
-evaluate to an error (like `{:error, _}` or `:error`), and to compute a result
-whether that happens or not.
-
-Suppose we have a pipeline `:some_input |> foo |> bar |> baz` and we want to
-return "it worked!" if all goes well. Both `bar` and `baz` can return `:error`,
-and we want to return either "bar broke!" or "baz broke!" depending on which
-fails. A Try pipeline to achieve this could look like:
+The other solution is to abandon `with` completely and intersperse guarding `if` clauses into the algorithm that can return early. This clutters the algorithm with imperative control flow, but we can abstract that control flow away. This is essentially how Sink works: It is a framework that inserts guards between transform functions in a computation. If a guard trips, further processing is preempted and a result immediately computed:
 
 [source, elixir]
 ----
-of!(fn -> foo(:some_input) end) <1>
-  |> map(:missing_bar, &bar/1)  <2>
-  |> map(:missing_baz, &baz/1)
-  |> reduce(                    <3>
-    fn value -> "it worked!" end,
-    fn error ->
-      case error do
-        e = {:missing_bar, _value, _context} -> "bar broke!"
-        e = {:missing_baz, _value, _context} -> "baz broke!"
-      end
-    end)
+from(request)
+  |> guard(&missing_username_param?/1, &error_400/1)
+  |> guard(&missing_preference_param?/1, &error_400/1)
+  |> transform(&fetch_user/1) #=> { User?, Preference }
+  |> guard(&no_such_user?/1, &error_404/1)
+  |> transform(&update_user_preferences/1) #=> :ok | :error
+  |> guard(&is_error?/1, &error_500/1)
+  |> guard(&is_ok?/1, &ok_200/1)
+  |> finish()
+  #=> Response(400) | Response(404) | Response(200) | Response(500)
 ----
-<1> `of!/1` starts a Try pipeline. The "bang" notation indicates that `foo/1`
-     should never return an error. `of!/1` will _raise_ an error if this
-     assumption is ever violated.
-<3> `map_ok/3` transforms the value of a Try. The first error encountered
-     by a pipeline, if any, causes any remaining map operations to be ignored:
-     The pipeline "short-circuits". Errors are tagged with values like
-     `:missing_bar` to contextualize their source for later handling.
-<4> `reduce/3` evaluates a Try pipeline to an arbitrary value. In this case,
-    if all went well, the Try evaluates to "it worked!". Otherwise, the
-    tagged errors are matched and resolve to one of "bar broke!" or
-    "baz broke!". In addition to a tag, each error tuple contains the value of
-    the Try at point of failure as well as the context of the error (e.g,
-    `{:error, context}`) if present.
 
-See the `Withp.Try` module documentation for more information.
+Here we attempt to update a user's preferences when we receive an Http request. If their username or preference is missing from the request, we evaluate to a 400 response. If we cannot find the given user in our database, we evaluate to a 404 response. Otherwise, we update their preferences. Here we used two terminal guard clauses; in terminal position, they must be exhaustive (one must match). This lets the pipeline self-verify.
