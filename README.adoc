@@ -79,7 +79,8 @@ In each of the work-arounds above, we embedded the function's name into the retu
 
 [source, elixir]
 ----
-Railway.of_one(:v0)
+import Railway
+of_one(:v0)
   |> map_ok(f1/1) # f1 :: (:v0 -> {:ok, :v1} | {:error, any})
   |> on_error_return(fn _ -> :e1 end)
   |> map_ok(f2/1) # f2 :: (:v1 -> {:ok, :v2} | {:error, any})
