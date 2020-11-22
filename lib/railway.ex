@@ -22,7 +22,7 @@ defmodule Railway do
   def map_ok(railway = %__MODULE__{fns: fns}, f) do
     mapper = fn
       {:ok, value} -> {:continue, require_result(f.(value))}
-      r = {:error, _} -> {:continue, r}
+      error = {:error, _} -> {:continue, error}
     end
 
     %{railway | fns: [mapper | fns]}
@@ -31,8 +31,8 @@ defmodule Railway do
   @spec map_error(t, (any -> result)) :: t
   def map_error(railway = %__MODULE__{fns: fns}, f) do
     mapper = fn
+      ok = {:ok, _} -> {:continue, ok}
       {:error, e} -> {:continue, result_to_error(f.(e))}
-      l = {:ok, _} -> {:continue, l}
     end
 
     %{railway | fns: [mapper | fns]}
@@ -42,7 +42,7 @@ defmodule Railway do
   def on_ok_return(railway = %__MODULE__{fns: fns}, f) do
     returner = fn
       {:ok, v} -> {:stop, f.(v)}
-      r = {:error, _} -> {:continue, r}
+      error = {:error, _} -> {:continue, error}
     end
 
     %{railway | fns: [returner | fns]}
@@ -51,8 +51,8 @@ defmodule Railway do
   @spec on_error_return(t, (any -> x)) :: x when x: any
   def on_error_return(railway = %__MODULE__{fns: fns}, f) do
     returner = fn
+      ok = {:ok, _} -> {:continue, ok}
       {:error, e} -> {:stop, f.(e)}
-      l = {:ok, _} -> {:continue, l}
     end
 
     %{railway | fns: [returner | fns]}
