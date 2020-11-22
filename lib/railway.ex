@@ -2,9 +2,9 @@ defmodule Railway do
   defstruct [:fns, :v]
 
   @opaque t :: %__MODULE__{
-    fns: [(any -> {:continue, any} | {:stop, any})],
-    v: any
-  }
+            fns: [(any -> {:continue, any} | {:stop, any})],
+            v: any
+          }
 
   @type result :: {:ok, any} | {:error, any}
 
