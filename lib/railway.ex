@@ -18,18 +18,11 @@ defmodule Railway do
     %__MODULE__{fns: [], v: {:error, e}}
   end
 
-  @spec compose(t, (t -> x)) :: x when x: t
-  def compose(flow, f) do
-    f.(flow)
-  end
-
   @spec map_ok(t, (any -> result)) :: t
   def map_ok(flow = %__MODULE__{fns: fns}, f) do
-    mapper = fn x ->
-      case x do
-        {:ok, value} -> {:continue, require_result(f.(value))}
-        r = {:error, _} -> {:continue, r}
-      end
+    mapper = fn
+      {:ok, value} -> {:continue, require_result(f.(value))}
+      r = {:error, _} -> {:continue, r}
     end
 
     %{flow | fns: [mapper | fns]}
@@ -37,11 +30,9 @@ defmodule Railway do
 
   @spec map_error(t, (any -> result)) :: t
   def map_error(flow = %__MODULE__{fns: fns}, f) do
-    mapper = fn x ->
-      case x do
-        {:error, e} -> {:continue, result_to_error(f.(e))}
-        l = {:ok, _} -> {:continue, l}
-      end
+    mapper = fn
+      {:error, e} -> {:continue, result_to_error(f.(e))}
+      l = {:ok, _} -> {:continue, l}
     end
 
     %{flow | fns: [mapper | fns]}
@@ -49,11 +40,9 @@ defmodule Railway do
 
   @spec on_ok_return(t, (any -> x)) :: x when x: any
   def on_ok_return(flow = %__MODULE__{fns: fns}, f) do
-    returner = fn x ->
-      case x do
-        {:ok, v} -> {:stop, f.(v)}
-        r = {:error, _} -> {:continue, r}
-      end
+    returner = fn
+      {:ok, v} -> {:stop, f.(v)}
+      r = {:error, _} -> {:continue, r}
     end
 
     %{flow | fns: [returner | fns]}
@@ -61,11 +50,9 @@ defmodule Railway do
 
   @spec on_error_return(t, (any -> x)) :: x when x: any
   def on_error_return(flow = %__MODULE__{fns: fns}, f) do
-    returner = fn x ->
-      case x do
-        {:error, e} -> {:stop, f.(e)}
-        l = {:ok, _} -> {:continue, l}
-      end
+    returner = fn
+      {:error, e} -> {:stop, f.(e)}
+      l = {:ok, _} -> {:continue, l}
     end
 
     %{flow | fns: [returner | fns]}
@@ -86,7 +73,7 @@ defmodule Railway do
   defp eval([], _) do
     # We received a {:continue, _} signal from a non-terminal function, but
     # there are no more functions to apply.
-    raise "The last combinator must be terminal."
+    raise ArgumentError, "The last combinator must be terminal."
   end
 
   defp require_result(r = {:ok, _v}), do: r

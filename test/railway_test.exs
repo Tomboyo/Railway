@@ -3,34 +3,16 @@ defmodule RailwayTest do
 
   import Railway
 
-  test "use-case" do
-    pipeline = fn f1, f2 ->
-      fn flow ->
-        flow
-        |> map_ok(f1)
-        |> on_error_return(fn _ -> :e1 end)
-        |> map_ok(f2)
-        |> on_error_return(fn _ -> :e2 end)
-        |> on_ok_return(fn x -> x end)
-      end
-    end
-
-    assert :v2 == of_one(:v0)
-      |> compose(pipeline.(
-             fn :v0 -> {:ok, :v1} end,
-             fn :v1 -> {:ok, :v2} end))
-      |> eval()
-
-    assert :e1 == of_one(:v0)
-      |> compose(pipeline.(
-             fn :v0 -> {:error, :e1} end,
-             &is_not_called/1))
-      |> eval()
-    
-    assert :e2 == of_one(:v0)
-      |> compose(pipeline.(
-             fn :v0 -> {:ok, :v1} end,
-             fn :v1 -> {:error, :e2} end))
+  test "on_error_return terminates the railway on error" do
+    assert "Expected" == of_one(:v0)
+      |> map_ok(fn :v0 -> {:ok, :v1} end)
+      # this handler is ignored because the element is ok
+      |> on_error_return(&is_not_called/1)
+      |> map_ok(fn :v1 -> {:error, :e1} end)
+      |> on_error_return(fn :e1 -> "Expected" end)
+      # the rest of the Railway is preempted
+      |> map_ok(&is_not_called/1)
+      |> on_error_return(&is_not_called/1)
       |> eval()
   end
 
@@ -46,6 +28,12 @@ defmodule RailwayTest do
       |> map_error(fn :e0 -> {:ok, :e1} end)
       |> on_error_return(fn :e1 -> :e2 end)
       |> eval()
+  end
+
+  test "a terminal combinator is required" do
+    assert_raise ArgumentError, fn ->
+      of_one(:v1) |> eval()
+    end
   end
 
   defp is_not_called(_) do
