@@ -1,7 +1,7 @@
-defmodule FlowTest do
+defmodule RailwayTest do
   use ExUnit.Case
 
-  import Flow
+  import Railway
 
   test "use-case" do
     pipeline = fn f1, f2 ->

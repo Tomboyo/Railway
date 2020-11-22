@@ -1,4 +1,4 @@
-defmodule Flow do
+defmodule Railway do
   defstruct [:fns, :v]
 
   @opaque t :: %__MODULE__{

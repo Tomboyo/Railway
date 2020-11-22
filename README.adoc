@@ -1,4 +1,4 @@
-= Flow
+= Railway
 
 Elixir's `with` doesn't meet my needs. Why is that, and how could it be improved?
 
@@ -79,21 +79,21 @@ In each of the work-arounds above, we embedded the function's name into the retu
 
 [source, elixir]
 ----
-Flow.of_one(:v0)
+Railway.of_one(:v0)
   |> map_ok(f1/1) # f1 :: (:v0 -> {:ok, :v1} | {:error, any})
   |> on_error_return(fn _ -> :e1 end)
   |> map_ok(f2/1) # f2 :: (:v1 -> {:ok, :v2} | {:error, any})
   |> on_error_return(fn _ -> :e2 end)
   |> on_ok_return(fn x -> x end)
-  |> eval() #=> evaluates the Flow to :v3, :e1, or :e2
+  |> eval() #=> evaluates the Railway to :v3, :e1, or :e2
 ----
 
-Flow is a rudimentary module of _combinators_, relatively simple functions that combine to define a complex pipeline. Flow's combinators abstract over control flow, allowing us to embed short-circuit, context-sensitive error handling into our pipeline exactly as we desire, but without clutter. Here's how it works:
+Railway is a rudimentary module of _combinators_, relatively simple functions that combine to define a complex pipeline. Railway's combinators abstract over control flow, allowing us to embed short-circuit, context-sensitive error handling into our pipeline exactly as we desire, and without clutter. Here's how it works:
 
-* We create a Flow from an initial value, or "element," using `of_one(:v0)`. We then compose combinators to describe the behavior of the pipeline.
+* We create a Railway from an initial value, or "element," using `of_one(:v0)`. We then compose combinators to describe the behavior of the pipeline.
 * Once `eval` is invoked, the element flows through each combinator in turn, from top to bottom.
 * The element has two states: `ok` and `error`. It begins in the `ok` state and may transition to `error` as combinators act upon it.
 * Combinators only apply their callbacks when the element is in the correct state. Above, `map_ok(f1/1)` will only apply `f1` to the element if the element is in the `ok` state. Otherwise, it passes the `error` element along unchanged.
-* Some combinators may short-circuit the Flow and immediately return a value. Above, `on_error_return(fn _ -> :e1 end)` is such a combinator, and if it receives an error element, it causes the Flow to evaluate to `:e1` immediately. All the remaining combinators are ignored.
+* Some combinators may short-circuit the Railway and immediately return a value. Above, `on_error_return(fn _ -> :e1 end)` is such a combinator, and if it receives an error element, it causes the Railway to evaluate to `:e1` immediately. All the remaining combinators are ignored.
 
-Flow does not represent a new concept, and is used only to illustrate the shortcomings of `with` and explain how they may be overcome. The techniques we used to create Flow are similar to those used by reactive programming frameworks like Spring Reactor.
+Railway does not represent a new concept, is not intended for production use, and is used only to illustrate the shortcomings of `with` and explain how they may be overcome. The techniques we used to create Railway are similar to those used by reactive programming frameworks like Spring Reactor.
