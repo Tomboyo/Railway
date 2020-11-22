@@ -19,43 +19,43 @@ defmodule Railway do
   end
 
   @spec map_ok(t, (any -> result)) :: t
-  def map_ok(flow = %__MODULE__{fns: fns}, f) do
+  def map_ok(railway = %__MODULE__{fns: fns}, f) do
     mapper = fn
       {:ok, value} -> {:continue, require_result(f.(value))}
       r = {:error, _} -> {:continue, r}
     end
 
-    %{flow | fns: [mapper | fns]}
+    %{railway | fns: [mapper | fns]}
   end
 
   @spec map_error(t, (any -> result)) :: t
-  def map_error(flow = %__MODULE__{fns: fns}, f) do
+  def map_error(railway = %__MODULE__{fns: fns}, f) do
     mapper = fn
       {:error, e} -> {:continue, result_to_error(f.(e))}
       l = {:ok, _} -> {:continue, l}
     end
 
-    %{flow | fns: [mapper | fns]}
+    %{railway | fns: [mapper | fns]}
   end
 
   @spec on_ok_return(t, (any -> x)) :: x when x: any
-  def on_ok_return(flow = %__MODULE__{fns: fns}, f) do
+  def on_ok_return(railway = %__MODULE__{fns: fns}, f) do
     returner = fn
       {:ok, v} -> {:stop, f.(v)}
       r = {:error, _} -> {:continue, r}
     end
 
-    %{flow | fns: [returner | fns]}
+    %{railway | fns: [returner | fns]}
   end
 
   @spec on_error_return(t, (any -> x)) :: x when x: any
-  def on_error_return(flow = %__MODULE__{fns: fns}, f) do
+  def on_error_return(railway = %__MODULE__{fns: fns}, f) do
     returner = fn
       {:error, e} -> {:stop, f.(e)}
       l = {:ok, _} -> {:continue, l}
     end
 
-    %{flow | fns: [returner | fns]}
+    %{railway | fns: [returner | fns]}
   end
 
   @spec eval(t) :: any
