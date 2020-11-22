@@ -1,40 +1,99 @@
-= Withp
+= Flow
 
-A hobby-project to frame logic patterns.
+Elixir's `with` doesn't meet my needs. Why is that, and how could it be improved?
 
-== Sink
+== Background
 
-Sink fills a similar role to the `with` expression, but better accomodates data collisions. Its goal is to let an author compose a function pipeline out of (a) guard clauses that can short-circuit the pipeline and (b) regular functions that advance an intermediate state. By emphasizing function composition, the result resembles a table of contents. The maintainer can see at a glance the branching points in the algorithm, directing them towards helper functions they need to read, and away from those they don't.
-
-Consider the following:
+In Elixir, the `with` expression lets us inject pattern-matching guards into a pipeline. Data which does not pattern match "falls out" of the pipeline into the `else` clause, which lets us handle errors:
 
 [source, elixir]
 ----
-with {:ok, v1} <- f1(),
+v0 = :v0
+with {:ok, v1} <- f1(v0),
      {:ok, v2} <- f2(v1)
 do
-  # happy-path
+  happy_path(v2)
 else
-  # pattern-match on errors
+  :error -> handle_an_error()
 end
 ----
 
-Suppose both `f1` and `f2` can return `:error`, but that if `f1` fails, we need to return a different value than if `f2` fails. We can achieve this by wrapping either of `f1` or `f2` in a local helper function to replace `:error` with a unique value. This is tedious, however, because many functions collide in this way. We would need to write helper functions pretty frequently.
+== The Problem
 
-The other solution is to abandon `with` completely and intersperse guarding `if` clauses into the algorithm that can return early. This clutters the algorithm with imperative control flow, but we can abstract that control flow away. This is essentially how Sink works: It is a framework that inserts guards between transform functions in a computation. If a guard trips, further processing is preempted and a result immediately computed:
+Suppose that `f1` and `f2` may both return an identical error value, e.g. `:error`. We have no choice but to use the same error-handler regardless of whether `f1` or `f2` failed because there is no way to tell which is the case:
 
 [source, elixir]
 ----
-from(request)
-  |> guard(&missing_username_param?/1, &error_400/1)
-  |> guard(&missing_preference_param?/1, &error_400/1)
-  |> transform(&fetch_user/1) #=> { User?, Preference }
-  |> guard(&no_such_user?/1, &error_404/1)
-  |> transform(&update_user_preferences/1) #=> :ok | :error
-  |> guard(&is_error?/1, &error_500/1)
-  |> guard(&is_ok?/1, &ok_200/1)
-  |> finish()
-  #=> Response(400) | Response(404) | Response(200) | Response(500)
+v0 = :v0
+with {:ok, v1} <- f1(v0), #=> {:ok, v1} | :error
+     {:ok, v2} <- f2(v1)  #=> {:ok, v2} | :error
+do
+  happy_path(v2)
+else
+  # is this from f1 or f2? We can't tell.
+  :error -> handle_both_the_same_way()
+end
 ----
 
-Here we attempt to update a user's preferences when we receive an Http request. If their username or preference is missing from the request, we evaluate to a 400 response. If we cannot find the given user in our database, we evaluate to a 404 response. Otherwise, we update their preferences. Here we used two terminal guard clauses; in terminal position, they must be exhaustive (one must match). This lets the pipeline self-verify.
+Perhaps we can work around this problem. Suppose we define a helper function for `f1` that returns `{:error, :from_f1}` on error, and another for `f2` that returns `{:error, :from_f2}`. This embeds the necessary context into the error value itself, allowing our `else` clause to handle the errors distinctly:
+
+[source, elixir]
+----
+v0 = :v0
+with {:ok, v1} <- f1_helper(v0), #=> {:ok, v1} | {:error, :from_f1}
+     {:ok, v2} <- f2_helper(v1)  #=> {:ok, v2} | {:error, :from_f2}
+do
+  happy_path(v2)
+else
+  {:error, :from_f1} -> handle_f1_error()
+  {:error, :from_f2} -> handle_f2_error()
+end
+----
+
+This works, but we would rather not define a helper for every function. For common use-cases like data validation, this becomes tedious; a programmer may need to extract several values from a map, all of which are required, any of which might be missing, each of which should generate a distinct error message for the end-user so that they know what they did wrong.
+
+As another work-around, we could define a "labelling" function that decorates every return value with the context we need:
+
+[source, elixir]
+----
+label = fn id, value ->
+  {id: id, result: value}
+end
+
+v0 = :v0
+with {id: _, result: {:ok, v1}} <- label(:f1, f1(v0)),  #=> {id: :f1, result: {:ok, v1} | :error}
+     {id: _, result: {:ok, v2}} <- label(:f2, f2(v1))   #=> {id: :f2, result: {:ok, v2} | :error}
+do
+  happy_path(v2)
+else
+  {id: :f1, result: _error} -> handle_f1_error()
+  {id: :f2, result: _error} -> handle_f2_error()
+end
+----
+
+As desired, this re-introduces necessary context into the `else` clause, but is no less tedius and cluttered. Perhaps we can do better.
+
+== The Solution
+
+In each of the work-arounds above, we embedded the function's name into the return value of `f1` and `f2` such that our single error-handling `else` block can determine where the error came from and handle it appropriately. Put simply, we identified every error by a function name. However, note that a pipeline is an ordered composition of functions, and therefore we may uniquely identify each function (and consequently any errors it generates) by its position within the composition rather than by its name. With that knowledge, we identify another solution:  We can define multiple error-handlers and embed each into the pipeline at the appropriate position, which lets us recover context based on the order of functions rather than attributes of the data. We have to discard `with` to achieve this, but the result is compelling:
+
+[source, elixir]
+----
+Flow.of_one(:v0)
+  |> map_ok(f1/1) # f1 :: (:v0 -> {:ok, :v1} | {:error, any})
+  |> on_error_return(fn _ -> :e1 end)
+  |> map_ok(f2/1) # f2 :: (:v1 -> {:ok, :v2} | {:error, any})
+  |> on_error_return(fn _ -> :e2 end)
+  |> on_ok_return(fn x -> x end)
+  |> eval() #=> evaluates the Flow to :v3, :e1, or :e2
+----
+
+Flow is a rudimentary module of _combinators_, relatively simple functions that combine to define a complex pipeline. Flow's combinators abstract over control flow, allowing us to embed short-circuit, context-sensitive error handling into our pipeline exactly as we desire, but without clutter. Here's how it works:
+
+* We create a Flow from an initial value, or "element," using `of_one(:v0)`. We then compose combinators to describe the behavior of the pipeline.
+* Once `eval` is invoked, the element flows through each combinator in turn, from top to bottom.
+* The element has two states: `ok` and `error`. It begins in the `ok` state and may transition to `error` as combinators act upon it.
+* Combinators only apply their callbacks when the element is in the correct state. Above, `map_ok(f1/1)` will only apply `f1` to the element if the element is in the `ok` state. Otherwise, it passes the `error` element along unchanged.
+* Some combinators may short-circuit the Flow and immediately return a value. Above, `on_error_return(fn _ -> :e1 end)` is such a combinator, and if it receives an error element, it causes the Flow to evaluate to `:e1` immediately. All the remaining combinators are ignored.
+
+Flow does not represent a new concept, and is used only to illustrate the shortcomings of `with` and explain how they may be overcome. The techniques we used to create Flow are similar to those used by reactive programming frameworks like Spring Reactor.
