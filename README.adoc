@@ -9,9 +9,10 @@ In Elixir, the `with` expression lets us inject pattern-matching guards into a p
 [source, elixir]
 ----
 v0 = :v0
-with {:ok, v1} <- f1(v0),
-     {:ok, v2} <- f2(v1)
-do
+with(
+  {:ok, v1} <- f1(v0),
+  {:ok, v2} <- f2(v1)
+) do
   happy_path(v2)
 else
   :error -> handle_an_error()
@@ -25,9 +26,10 @@ Suppose that `f1` and `f2` may both return an identical error value, e.g. `:erro
 [source, elixir]
 ----
 v0 = :v0
-with {:ok, v1} <- f1(v0), #=> {:ok, v1} | :error
-     {:ok, v2} <- f2(v1)  #=> {:ok, v2} | :error
-do
+with(
+  {:ok, v1} <- f1(v0), #=> {:ok, v1} | :error
+  {:ok, v2} <- f2(v1)  #=> {:ok, v2} | :error
+) do
   happy_path(v2)
 else
   # is this from f1 or f2? We can't tell.
@@ -40,9 +42,10 @@ Perhaps we can work around this problem. Suppose we define a helper function for
 [source, elixir]
 ----
 v0 = :v0
-with {:ok, v1} <- f1_helper(v0), #=> {:ok, v1} | {:error, :from_f1}
-     {:ok, v2} <- f2_helper(v1)  #=> {:ok, v2} | {:error, :from_f2}
-do
+with(
+  {:ok, v1} <- f1_helper(v0), #=> {:ok, v1} | {:error, :from_f1}
+  {:ok, v2} <- f2_helper(v1)  #=> {:ok, v2} | {:error, :from_f2}
+) do
   happy_path(v2)
 else
   {:error, :from_f1} -> handle_f1_error()
@@ -61,9 +64,10 @@ label = fn id, value ->
 end
 
 v0 = :v0
-with {id: _, result: {:ok, v1}} <- label(:f1, f1(v0)),  #=> {id: :f1, result: {:ok, v1} | :error}
-     {id: _, result: {:ok, v2}} <- label(:f2, f2(v1))   #=> {id: :f2, result: {:ok, v2} | :error}
-do
+with(
+  {id: _, result: {:ok, v1}} <- label(:f1, f1(v0)),  #=> {id: :f1, result: {:ok, v1} | :error}
+  {id: _, result: {:ok, v2}} <- label(:f2, f2(v1))   #=> {id: :f2, result: {:ok, v2} | :error}
+) do
   happy_path(v2)
 else
   {id: :f1, result: _error} -> handle_f1_error()
